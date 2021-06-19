@@ -14,6 +14,17 @@ variable "subnets" {
     service_endpoints = list(string)
   }))
   description = "Subnet parameters"
+  validation {
+    condition = can(
+      [
+        for k, v in var.subnets : [
+          for s in v.address_prefixes : regex(
+            "^\\d{1,3}?\\.\\d{1,3}?\\.\\d{1,3}?\\.\\d{1,3}?/\\d{1,2}", s
+          )
+        ]
+    ])
+    error_message = "The address prefix must be format of CIDR."
+  }
 }
 
 variable "resource_group_name" {

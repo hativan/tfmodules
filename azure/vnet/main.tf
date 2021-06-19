@@ -26,6 +26,16 @@ variable "resource_group_name" {
 variable "vnet_address_space" {
   type        = list(string)
   description = "Virtual Network address space"
+  validation {
+    condition = can(
+      [
+        for s in var.vnet_address_space : regex(
+          "^\\d{1,3}?\\.\\d{1,3}?\\.\\d{1,3}?\\.\\d{1,3}?/\\d{1,2}?", s
+        )
+      ]
+    )
+    error_message = "The address space must be format of CIDR."
+  }
 }
 
 resource "azurerm_virtual_network" "simple_vnet" {

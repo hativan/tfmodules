@@ -59,11 +59,6 @@ variable "domain_name_label" {
   description = "Domain name of Application Gateway"
 }
 
-variable "appgw_private_ip_address" {
-  type        = string
-  description = "Application Gateway private ip addresss"
-}
-
 variable "dns_a_record_name" {
   type        = string
   description = "Application Gateway domain name"
@@ -146,13 +141,6 @@ resource "azurerm_application_gateway" "simple_appgw" {
   frontend_ip_configuration {
     name                 = local.frontend_public_ip_configuration_name
     public_ip_address_id = azurerm_public_ip.simple_appgw.id
-  }
-
-  frontend_ip_configuration {
-    name                          = local.frontend_private_ip_configuration_name
-    subnet_id                     = var.frontend_subnet_id
-    private_ip_address            = var.appgw_private_ip_address
-    private_ip_address_allocation = "Static"
   }
 
   backend_address_pool {

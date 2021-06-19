@@ -60,12 +60,11 @@ module "subnet" {
 }
 
 module "appgw" {
-  source                   = "./azure/appgw"
-  appgw_name               = "example-appgw"
-  vnet_name                = module.vnet.vnet_name
-  resource_group_name      = local.resource_group_name
-  location                 = local.location
-  frontend_subnet_id       = module.subnet.subnet_ids.appgw_frontend
-  domain_name_label        = "example-appgw"
-  appgw_private_ip_address = "10.0.1.100"
+  source              = "./azure/appgw"
+  appgw_name          = "example-appgw"
+  vnet_name           = module.vnet.vnet_name
+  resource_group_name = local.resource_group_name
+  location            = local.location
+  frontend_subnet_id  = module.subnet.subnet_ids.appgw_frontend
+  domain_name_label   = "example-appgw"
 }
