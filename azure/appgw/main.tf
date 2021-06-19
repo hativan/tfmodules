@@ -59,17 +59,35 @@ variable "domain_name_label" {
   description = "Domain name of Application Gateway"
 }
 
+variable "appgw_private_ip_address" {
+  type        = string
+  description = "Application Gateway private ip addresss"
+}
+
+variable "dns_a_record_name" {
+  type        = string
+  description = "Application Gateway domain name"
+  default     = ""
+}
+
+variable "dns_zone" {
+  type        = string
+  description = "Application Gateway domain zone"
+  default     = ""
+}
+
 locals {
-  frontend_port                  = var.http_listener_protocol == "HTTP" ? 80 : 443
-  backend_address_pool_name      = "${var.vnet_name}-beap"
-  backend_http_settings_name     = "${var.vnet_name}-behs"
-  frontend_port_name             = "${var.vnet_name}-feport"
-  frontend_ip_configuration_name = "${var.vnet_name}-feip"
-  listener_name                  = "${var.vnet_name}-httplstn"
-  request_routing_rule_name      = "${var.vnet_name}-rqrt"
-  redirect_configuration_name    = "${var.vnet_name}-rdrcfg"
-  url_path_map_name              = "${var.vnet_name}-upm"
-  path_rule_name                 = "${var.vnet_name}-pr"
+  frontend_port                          = var.http_listener_protocol == "HTTP" ? 80 : 443
+  backend_address_pool_name              = "${var.vnet_name}-beap"
+  backend_http_settings_name             = "${var.vnet_name}-behs"
+  frontend_port_name                     = "${var.vnet_name}-feport"
+  frontend_public_ip_configuration_name  = "${var.vnet_name}-fepubip"
+  frontend_private_ip_configuration_name = "${var.vnet_name}-feprivip"
+  listener_name                          = "${var.vnet_name}-httplstn"
+  request_routing_rule_name              = "${var.vnet_name}-rqrt"
+  redirect_configuration_name            = "${var.vnet_name}-rdrcfg"
+  url_path_map_name                      = "${var.vnet_name}-upm"
+  path_rule_name                         = "${var.vnet_name}-pr"
 }
 
 resource "azurerm_public_ip" "simple_appgw" {
@@ -104,7 +122,7 @@ resource "azurerm_subnet_network_security_group_association" "simple_appgw_front
   network_security_group_id = azurerm_network_security_group.simple_appgw_frontend.id
 }
 
-resource "azurerm_application_gateway" "simple_http_appgw" {
+resource "azurerm_application_gateway" "simple_appgw" {
   name                = var.appgw_name
   resource_group_name = var.resource_group_name
   location            = var.location
@@ -126,8 +144,15 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
   }
 
   frontend_ip_configuration {
-    name                 = local.frontend_ip_configuration_name
+    name                 = local.frontend_public_ip_configuration_name
     public_ip_address_id = azurerm_public_ip.simple_appgw.id
+  }
+
+  frontend_ip_configuration {
+    name                          = local.frontend_private_ip_configuration_name
+    subnet_id                     = var.frontend_subnet_id
+    private_ip_address            = var.appgw_private_ip_address
+    private_ip_address_allocation = "Static"
   }
 
   backend_address_pool {
@@ -144,7 +169,7 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
 
   http_listener {
     name                           = local.listener_name
-    frontend_ip_configuration_name = local.frontend_ip_configuration_name
+    frontend_ip_configuration_name = local.frontend_public_ip_configuration_name
     frontend_port_name             = local.frontend_port_name
     protocol                       = "Http"
   }
@@ -174,4 +199,16 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
     create = "60m"
     delete = "60m"
   }
+}
+
+resource "azurerm_dns_a_record" "simple_appgw" {
+  depends_on = [
+    azurerm_application_gateway.simple_appgw
+  ]
+  count               = var.dns_a_record_name != "" && var.dns_zone != "" ? 1 : 0
+  name                = var.dns_a_record_name
+  zone_name           = var.dns_zone
+  resource_group_name = var.resource_group_name
+  ttl                 = 300
+  target_resource_id  = azurerm_public_ip.simple_appgw.id
 }
