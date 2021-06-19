@@ -54,12 +54,17 @@ variable "http_listener_protocol" {
   }
 }
 
+variable "domain_name_label" {
+  type        = string
+  description = "Domain name of Application Gateway"
+}
+
 locals {
   frontend_port                  = var.http_listener_protocol == "HTTP" ? 80 : 443
   backend_address_pool_name      = "${var.vnet_name}-beap"
+  backend_http_settings_name     = "${var.vnet_name}-behs"
   frontend_port_name             = "${var.vnet_name}-feport"
   frontend_ip_configuration_name = "${var.vnet_name}-feip"
-  http_setting_name              = "${var.vnet_name}-be-htst"
   listener_name                  = "${var.vnet_name}-httplstn"
   request_routing_rule_name      = "${var.vnet_name}-rqrt"
   redirect_configuration_name    = "${var.vnet_name}-rdrcfg"
@@ -71,7 +76,32 @@ resource "azurerm_public_ip" "simple_appgw" {
   name                = "${var.appgw_name}-pip"
   resource_group_name = var.resource_group_name
   location            = var.location
-  allocation_method   = "Static"
+  allocation_method   = "Dynamic"
+  sku                 = "Basic"
+  domain_name_label   = var.domain_name_label
+}
+
+resource "azurerm_network_security_group" "simple_appgw_frontend" {
+  name                = "${var.appgw_name}-frontend-nsg"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  security_rule {
+    name                       = "inbound-http"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = local.frontend_port
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "simple_appgw_frontend" {
+  subnet_id                 = var.frontend_subnet_id
+  network_security_group_id = azurerm_network_security_group.simple_appgw_frontend.id
 }
 
 resource "azurerm_application_gateway" "simple_http_appgw" {
@@ -97,7 +127,7 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
 
   frontend_ip_configuration {
     name                 = local.frontend_ip_configuration_name
-    public_ip_address_id = azurerm_public_ip.example.id
+    public_ip_address_id = azurerm_public_ip.simple_appgw.id
   }
 
   backend_address_pool {
@@ -105,7 +135,7 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
   }
 
   backend_http_settings {
-    name                  = local.http_setting_name
+    name                  = local.backend_http_settings_name
     cookie_based_affinity = "Disabled"
     port                  = var.backend_port
     protocol              = "Http"
@@ -124,16 +154,24 @@ resource "azurerm_application_gateway" "simple_http_appgw" {
     rule_type                  = "PathBasedRouting"
     http_listener_name         = local.listener_name
     backend_address_pool_name  = local.backend_address_pool_name
-    backend_http_settings_name = local.http_setting_name
+    backend_http_settings_name = local.backend_http_settings_name
+    url_path_map_name          = local.url_path_map_name
   }
 
   url_path_map {
     name                               = local.url_path_map_name
     default_backend_address_pool_name  = local.backend_address_pool_name
     default_backend_http_settings_name = local.backend_http_settings_name
-    path_rule = {
-      name  = local.path_rule_name
-      paths = var.default_url_paths
+    path_rule {
+      name                       = local.path_rule_name
+      paths                      = var.default_url_paths
+      backend_address_pool_name  = local.backend_address_pool_name
+      backend_http_settings_name = local.backend_http_settings_name
     }
+  }
+
+  timeouts {
+    create = "60m"
+    delete = "60m"
   }
 }
