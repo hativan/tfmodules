@@ -71,8 +71,21 @@ variable "dns_zone" {
   default     = ""
 }
 
+variable "ssl_cert_pfx_path" {
+  type        = string
+  description = "Path of SSL certificate pfx"
+  default     = ""
+}
+
+variable "ssl_cert_password" {
+  type        = string
+  description = "SSL certificate password"
+  default     = ""
+}
+
 locals {
-  frontend_port                          = var.http_listener_protocol == "HTTP" ? 80 : 443
+  ssl_resource_count                     = var.http_listener_protocol == "HTTPS" ? 1 : 0
+  frontend_port                          = var.http_listener_protocol == "HTTPS" ? 443 : 80
   backend_address_pool_name              = "${var.vnet_name}-beap"
   backend_http_settings_name             = "${var.vnet_name}-behs"
   frontend_port_name                     = "${var.vnet_name}-feport"
@@ -83,6 +96,82 @@ locals {
   redirect_configuration_name            = "${var.vnet_name}-rdrcfg"
   url_path_map_name                      = "${var.vnet_name}-upm"
   path_rule_name                         = "${var.vnet_name}-pr"
+  ssl_certificate_name                   = var.http_listener_protocol == "HTTPS" ? "${var.appgw_name}-ssl" : ""
+}
+
+resource "azurerm_user_assigned_identity" "simple_appgw" {
+  count               = local.ssl_resource_count
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  name                = "${var.appgw_name}-id"
+}
+
+resource "azurerm_key_vault" "simple_appgw_ssl" {
+  count                       = local.ssl_resource_count
+  name                        = "${var.appgw_name}-ssl-certificate"
+  location                    = var.location
+  resource_group_name         = var.resource_group_name
+  enabled_for_disk_encryption = true
+  tenant_id                   = azurerm_user_assigned_identity.simple_appgw.0.tenant_id
+  soft_delete_retention_days  = 7
+  purge_protection_enabled    = false
+
+  sku_name = "standard"
+
+  access_policy {
+    tenant_id      = azurerm_user_assigned_identity.simple_appgw.0.tenant_id
+    object_id      = azurerm_user_assigned_identity.simple_appgw.0.principal_id
+    application_id = azurerm_user_assigned_identity.simple_appgw.0.client_id
+
+    certificate_permissions = [
+      "Get",
+    ]
+
+  }
+
+  network_acls {
+    bypass                     = "AzureServices"
+    default_action             = "Allow"
+    virtual_network_subnet_ids = [var.frontend_subnet_id]
+  }
+}
+
+resource "azurerm_key_vault_certificate" "simple_appgw_ssl_certificate" {
+  count        = local.ssl_resource_count
+  name         = "${var.appgw_name}-ssl-cert"
+  key_vault_id = azurerm_key_vault.simple_appgw_ssl.0.id
+
+  certificate {
+    contents = filebase64(var.ssl_cert_pfx_path)
+    password = var.ssl_cert_password
+  }
+
+  certificate_policy {
+    issuer_parameters {
+      name = "Unknown"
+    }
+
+    key_properties {
+      curve      = "P-384"
+      exportable = true
+      key_size   = 384
+      key_type   = "EC"
+      reuse_key  = false
+    }
+
+    lifetime_action {
+      action {
+        action_type = "AutoRenew"
+      }
+      trigger {
+        days_before_expiry = 30
+      }
+    }
+
+    secret_properties {
+      content_type = "application/x-pkcs12"
+    }
+  }
 }
 
 resource "azurerm_public_ip" "simple_appgw" {
@@ -160,6 +249,15 @@ resource "azurerm_application_gateway" "simple_appgw" {
     frontend_ip_configuration_name = local.frontend_public_ip_configuration_name
     frontend_port_name             = local.frontend_port_name
     protocol                       = "Http"
+    ssl_certificate_name           = local.ssl_certificate_name
+  }
+
+  dynamic "ssl_certificate" {
+    for_each = local.ssl_resource_count == 1 ? [1] : []
+    content {
+      name                = local.ssl_certificate_name
+      key_vault_secret_id = azurerm_key_vault_certificate.simple_appgw_ssl_certificate.0.id
+    }
   }
 
   request_routing_rule {

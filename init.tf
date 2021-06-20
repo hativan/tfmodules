@@ -20,7 +20,11 @@ variable "tenant_id" {
 provider "azurerm" {
   subscription_id = var.subscription_id
   tenant_id       = var.tenant_id
-  features {}
+  features {
+    key_vault {
+      purge_soft_delete_on_destroy = true
+    }
+  }
 }
 
 resource "azurerm_resource_group" "example" {
@@ -47,7 +51,7 @@ module "subnet" {
     frontend = {
       name              = "appgw-frontend"
       address_prefixes  = ["10.0.1.0/24"]
-      service_endpoints = []
+      service_endpoints = ["Microsoft.KeyVault"]
     }
     backend = {
       name              = "appgw-backend"
